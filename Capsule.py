@@ -53,7 +53,7 @@ def trainMONK():
         torch.distributed.init_process_group(backend='nccl', init_method='env://')
 
     trData, vaData, teData, n_labels, tensor_size = \
-        DataSets("fashionmnist", data_path="data", n_samples=args.BSZ)
+        DataSets("fashionmnist", data_path="../data", n_samples=args.BSZ)
     
     train_sampler = torch.utils.data.distributed.DistributedSampler(trData)
     trData = torch.utils.data.DataLoader(trData, sampler=train_sampler, batch_size=args.BSZ, shuffle=(train_sampler is None))
@@ -83,6 +83,7 @@ def trainMONK():
         raise NotImplementedError
 
     # Usual training
+    t1 = timeit.default_timer()
     for epoch in range(args.Epochs):
         train_sampler.set_epoch(epoch)
         Timer = timeit.default_timer()
@@ -102,7 +103,7 @@ def trainMONK():
             Optimizer.step()
 
             # weight visualization
-            if i % 50 == 0:
+            if i % 50 == 0 and args.local_rank == 0:
                 visplots.show_weights(Model.netEmbedding.state_dict(),
                                       png_name=file_name)
 
@@ -112,25 +113,26 @@ def trainMONK():
             Model.meterLoss.append(float(loss.cpu().data.numpy()))
 
             Model.meterSpeed.append(int(float(args.BSZ) /
-                                        (timeit.default_timer()-Timer)))
+                                         (timeit.default_timer()-Timer)))
             Timer = timeit.default_timer()
-
-            print("... {:6d} :: ".format(Model.meterIterations) +
-                  "Cost {:2.3f} :: ".format(Model.meterLoss[-1]) +
-                  "Top1/Top5 - {:3.2f}/{:3.2f}".format(Model.meterTop1[-1],
-                                                       Model.meterTop5[-1],) +
-                  " :: {:4d} I/S    ".format(Model.meterSpeed[-1]), end="\r")
-            sys.stdout.flush()
+            if args.local_rank == 0:
+                print("... {:6d} :: ".format(Model.meterIterations) +
+                   "Cost {:2.3f} :: ".format(Model.meterLoss[-1]) +
+                   "Top1/Top5 - {:3.2f}/{:3.2f}".format(Model.meterTop1[-1],
+                                                        Model.meterTop5[-1],) +
+                   " :: {:4d} I/S    ".format(Model.meterSpeed[-1]), end="\r")
+                sys.stdout.flush()
 
         # save every epoch and print the average of epoch
         mean_loss = np.mean(Model.meterLoss[-i:])
         mean_top1 = np.mean(Model.meterTop1[-i:])
         mean_top5 = np.mean(Model.meterTop5[-i:])
         mean_speed = int(np.mean(Model.meterSpeed[-i:]))
-        print("... {:6d} :: ".format(Model.meterIterations) +
-              "Cost {:2.3f} :: ".format(mean_loss) +
-              "Top1/Top5 - {:3.2f}/{:3.2f}".format(mean_top1, mean_top5) +
-              " :: {:4d} I/S    ".format(mean_speed))
+        if args.local_rank == 0:
+            print("... {:6d} :: ".format(Model.meterIterations) +
+                  "Cost {:2.3f} :: ".format(mean_loss) +
+                  "Top1/Top5 - {:3.2f}/{:3.2f}".format(mean_top1, mean_top5) +
+                  " :: {:4d} I/S    ".format(mean_speed))
         # save model
         SaveModel(Model)
 
@@ -143,13 +145,15 @@ def trainMONK():
             margin_loss, (top1, top5) = Model.netLoss((features, targets))
             test_top1.append(float(top1.cpu().data.numpy()))
             test_top5.append(float(top5.cpu().data.numpy()))
-        print("... Test accuracy - {:3.2f}/{:3.2f}".format(np.mean(test_top1),
-                                                           np.mean(test_top5)))
-        Model.netEmbedding.train()
-        Model.netLoss.train()
-        Timer = timeit.default_timer()
+        if args.local_rank == 0:
+            print("... Test accuracy - {:3.2f}/{:3.2f}".format(np.mean(test_top1),
+                                                               np.mean(test_top5)))
+    Model.netEmbedding.train()
+    Model.netLoss.train()
+    Timer = timeit.default_timer()
 
     print("\nDone with training")
+    print(timeit.default_timer() - t1)
     return Model
 
 
