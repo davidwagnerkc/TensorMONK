@@ -93,8 +93,8 @@ def DataSets(dataset="MNIST",
 
     trData = loader(root=folder, train=True, download=False,
                     transform=Compose(basics))
-    trData = DataLoader(trData, batch_size=n_samples,
-                        shuffle=True, num_workers=cpus)
+    #trData = DataLoader(trData, batch_size=n_samples,
+    #                    shuffle=True, num_workers=cpus)
     return trData, vaData, teData, n_labels, tensor_size
 
 
